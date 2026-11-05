@@ -25,14 +25,16 @@
   <main>
     <div class="bar">
       <button class="pdv on" id="mPdv">🟥 Balcão / PDV (1)</button>
+      <label><input type="checkbox" id="autoPdv" checked> Detectar PDV automaticamente</label>
       <button class="cor" id="mCor">🟩 Corredor (2)</button>
+      <button id="detectAisle" disabled>Detectar corredor</button>
       <button id="close">Fechar polígono (Enter)</button>
       <button id="undo">Desfazer (Backspace)</button>
       <button id="clear">Limpar tudo</button>
       <label style="font-size:.85rem"><input type="checkbox" id="noAisle"> Corredor não aparece</label>
       <button id="prev">◀ imagem</button><button id="next">imagem ▶</button>
       <button class="save" id="save">💾 Salvar e próxima (S)</button>
-      <span id="status"></span>
+      <span id="pdvStatus" role="status"></span><span id="aisleStatus" role="status"></span><span id="status"></span>
     </div>
     <div class="help">
       🟡 = rascunho feito pela IA: se estiver certo, só aperte <b>S</b>; se não, <b>Limpar tudo</b> e redesenhe. ✅ = revisada.
@@ -46,6 +48,7 @@
 <script>
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d'), img = new Image();
 let cams = [], cam = null, imgIdx = 0, mode = 'pdv', polys = { pdv: [], corredor: [] }, cur = [];
+let aisleOverlay = null, pdvOverlay = null, imageVersion = 0, pdvRequest = 0;
 const COLORS = { pdv: '220,38,38', corredor: '22,163,74' };
 const $ = id => document.getElementById(id);
 
@@ -69,13 +72,26 @@ async function open(c) {
 }
 
 function showImage() {
-  img.onload = () => { cv.width = img.naturalWidth; cv.height = img.naturalHeight; draw(); };
+  imageVersion++;
+  aisleOverlay = null;
+  pdvOverlay = null;
+  $('aisleStatus').textContent = '';
+  $('pdvStatus').textContent = '';
+  $('detectAisle').disabled = true;
+  img.onload = () => {
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    $('detectAisle').disabled = false;
+    draw();
+    if ($('autoPdv').checked) detectPdv();
+  };
   img.src = `/api/rotular/imagem/${cam.key}/${cam.images[imgIdx]}`;
   $('status').textContent = `${cam.key} — imagem ${imgIdx + 1}/${cam.images.length}`;
 }
 
 function draw() {
   ctx.drawImage(img, 0, 0);
+  if (aisleOverlay) ctx.drawImage(aisleOverlay, 0, 0, cv.width, cv.height);
+  if (pdvOverlay) ctx.drawImage(pdvOverlay, 0, 0, cv.width, cv.height);
   const W = cv.width, H = cv.height, lw = Math.max(2, W / 400);
   for (const k of ['pdv', 'corredor']) for (const p of polys[k]) {
     ctx.beginPath(); p.forEach(([x, y], i) => i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)); ctx.closePath();
@@ -107,6 +123,64 @@ async function save() {
   await loadList(next ? next.key : cam.key);
 }
 
+async function detectPdv() {
+  const version = imageVersion;
+  const requestId = ++pdvRequest;
+  const status = $('pdvStatus');
+  const current = () => version === imageVersion && requestId === pdvRequest;
+  pdvOverlay = null;
+  status.textContent = '';
+  draw();
+  if (!$('autoPdv').checked) return;
+  status.textContent = 'Analisando PDV…';
+  try {
+    const result = await detectRegion('pdv');
+    if (!current()) return;
+    pdvOverlay = result.overlayImage;
+    const area = result.percentual.toLocaleString('pt-BR');
+    const center = Math.round(result.centro_x * 100);
+    status.textContent = result.detectado ? `PDV em laranja: ${area}% da imagem · centro a ${center}% da esquerda` : 'PDV não detectado';
+    if (result.incerto) status.textContent += ' · confira a imagem';
+    draw();
+  } catch (error) {
+    if (current()) status.textContent = error.message || 'Falha na detecção do PDV.';
+  }
+}
+
+async function detectRegion(region) {
+  const key = encodeURIComponent(cam.key);
+  const name = encodeURIComponent(cam.images[imgIdx]);
+  const response = await fetch(`/api/rotular/${region}/${key}/${name}`);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message);
+  const overlay = new Image();
+  overlay.src = `data:image/png;base64,${result.overlay}`;
+  await overlay.decode();
+  return { ...result, overlayImage: overlay };
+}
+
+$('autoPdv').onchange = () => { if (!$('detectAisle').disabled || img.complete && img.naturalWidth) detectPdv(); };
+$('detectAisle').onclick = async () => {
+  const version = imageVersion;
+  const button = $('detectAisle');
+  const status = $('aisleStatus');
+  button.disabled = true;
+  status.textContent = 'Analisando corredor…';
+  try {
+    const result = await detectRegion('corredor');
+    if (version !== imageVersion) return;
+    aisleOverlay = result.overlayImage;
+    const percentage = result.percentual.toLocaleString('pt-BR');
+    status.textContent = result.detectado ? `Corredor estimado: ${percentage}% da imagem` : 'Corredor não detectado';
+    if (result.incerto) status.textContent += ' · confira a imagem';
+    draw();
+  } catch (error) {
+    if (version === imageVersion) status.textContent = error.message || 'Falha na detecção.';
+  } finally {
+    if (version === imageVersion) button.disabled = false;
+  }
+};
+
 $('mPdv').onclick = () => setMode('pdv'); $('mCor').onclick = () => setMode('corredor');
 $('close').onclick = closePoly; $('undo').onclick = undo; $('save').onclick = save;
 $('clear').onclick = () => { if (confirm('Apagar as marcações desta câmera?')) { polys = { pdv: [], corredor: [] }; cur = []; draw(); } };
@@ -118,7 +192,7 @@ document.onkeydown = e => {
   else if (e.key === '1') setMode('pdv'); else if (e.key === '2') setMode('corredor');
   else if (e.key.toLowerCase() === 's') save();
 };
-loadList(null).then(() => open(cams.find(c => !c.labeled) || cams[0]));  // lista já vem na ordem de revisão
+loadList(new URLSearchParams(window.location.search).get('camera'));
 </script>
 </body>
 </html>

@@ -160,6 +160,14 @@ O alinhamento visual é calculado através de um pipeline em [vision_engine.py](
 
 ## 🚀 Como Executar o Projeto
 
+A tela `/rotular` usa as imagens em `../dataset/images/<camera>/`. Ela destaca
+automaticamente o PDV em laranja e permite solicitar a detecção do corredor em
+verde. As sobreposições são sugestões visuais. As anotações são gravadas em
+`../dataset/labels/` ao salvar.
+
+Para testar outro ONNX de segmentação compatível na detecção de PDV dessa tela,
+defina `PDV_MODEL_PATH` com o caminho do modelo antes de iniciar o servidor.
+
 ### Pré-requisitos
 - **Python 3.10** ou superior instalado.
 - Pacotes necessários instalados:

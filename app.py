@@ -5,7 +5,7 @@ import time
 import base64
 import cv2
 import numpy as np
-from flask import Flask, render_template, request, jsonify, send_file, Response, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, Response, session, redirect, url_for, current_app
 from core.camera_manager import CameraManager, SNAPSHOTS_DIR, REFERENCES_DIR, read_cv2_image
 from core.dvr_manager import DVRManager
 from core.vision_engine import VisionEngine
@@ -495,6 +495,13 @@ def get_snapshot(camera_id):
 # ==============================================================================
 DATASET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dataset")
 
+if pdv_model_path := os.environ.get("PDV_MODEL_PATH", "").strip():
+    class LabelPDVEngine(VisionEngine):
+        AISLE_MODEL = pdv_model_path
+        _aisle_net = None
+
+    app.config["PDV_VISION_ENGINE"] = LabelPDVEngine
+
 def _dataset_path(*parts):
     base = os.path.realpath(DATASET_DIR)
     path = os.path.realpath(os.path.join(base, *parts))
@@ -528,6 +535,37 @@ def rotular_cameras():
 @app.route("/api/rotular/imagem/<key>/<name>")
 def rotular_imagem(key, name):
     return send_file(_dataset_path("images", key, name), mimetype="image/jpeg")
+
+@app.route("/api/rotular/corredor/<key>/<name>")
+@app.route("/api/rotular/pdv/<key>/<name>", defaults={"pdv": True})
+def rotular_corredor(key, name, pdv=False):
+    frame = read_cv2_image(_dataset_path("images", key, name))
+    if frame is None:
+        return jsonify({"message": "Imagem indisponível."}), 404
+    engine = current_app.config.get("PDV_VISION_ENGINE", VisionEngine) if pdv else VisionEngine
+    result = engine.detect_aisle(frame)
+    if result is None:
+        return jsonify({"message": "Modelo de segmentação indisponível."}), 503
+    region = result["mask"] == (1 if pdv else 2)
+    camera_region = current_app.config.get("PDV_CAMERA_REGIONS", {}).get(key) if pdv else None
+    if camera_region:
+        height, width = region.shape
+        points = np.rint(np.asarray(camera_region) * [width - 1, height - 1]).astype(np.int32)
+        allowed = np.zeros(region.shape, dtype=np.uint8)
+        cv2.fillPoly(allowed, [points], 1)
+        region &= allowed.astype(bool)
+    _, xs = np.nonzero(region)
+    overlay = np.zeros((*region.shape, 4), dtype=np.uint8)
+    overlay[region] = (0, 165, 255, 135) if pdv else (74, 220, 34, 135)
+    _, png = cv2.imencode(".png", overlay)
+    return jsonify({
+        "overlay": base64.b64encode(png).decode("ascii"),
+        "percentual": round(100 * len(xs) / region.size, 1),
+        "detectado": bool(len(xs)),
+        "centro_x": round(float(xs.mean() / region.shape[1]), 2) if pdv and len(xs) else None,
+        "incerto": result["uncertainty"] > engine.AISLE_MAX_UNCERTAINTY,
+    })
+
 
 @app.route("/api/rotular/label/<key>", methods=["GET", "POST"])
 def rotular_label(key):

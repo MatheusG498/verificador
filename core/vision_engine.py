@@ -5,6 +5,7 @@ Combina Homografia (ORB Matching) com Transformada de Hough para Alinhamento Est
 import os
 import time
 import math
+import threading
 import cv2
 import numpy as np
 import urllib.request
@@ -286,23 +287,25 @@ class VisionEngine:
     PDV_CENTER_MIN = 0.25
     PDV_CENTER_MAX = 0.75
     _aisle_net = None
+    _aisle_lock = threading.Lock()
 
     @classmethod
     def detect_aisle(cls, img: np.ndarray) -> Optional[Dict[str, Any]]:
         """% da imagem que é corredor/PDV, lado do corredor e incerteza da IA. None se não houver modelo."""
-        if cls._aisle_net is None:
-            if not os.path.exists(cls.AISLE_MODEL):
-                return None
-            # pelos bytes: no Windows o OpenCV não abre caminho com acento ("posição")
-            cls._aisle_net = cv2.dnn.readNetFromONNX(np.fromfile(cls.AISLE_MODEL, np.uint8))
         x = cv2.cvtColor(cv2.resize(img, (448, 256)), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         x = (x - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
         x = x.transpose(2, 0, 1)
         # Dupla checagem: imagem normal + espelhada (desespelhada de volta), probabilidades somadas
         outs = []
-        for xi in (x, x[:, :, ::-1]):  # ONNX exportado com lote fixo de 1
-            cls._aisle_net.setInput(np.ascontiguousarray(xi)[None])
-            outs.append(cls._aisle_net.forward()[0])
+        with cls._aisle_lock:
+            if cls._aisle_net is None:
+                if not os.path.exists(cls.AISLE_MODEL):
+                    return None
+                # pelos bytes: no Windows o OpenCV não abre caminho com acento ("posição")
+                cls._aisle_net = cv2.dnn.readNetFromONNX(np.fromfile(cls.AISLE_MODEL, np.uint8))
+            for xi in (x, x[:, :, ::-1]):  # ONNX exportado com lote fixo de 1
+                cls._aisle_net.setInput(np.ascontiguousarray(xi)[None])
+                outs.append(cls._aisle_net.forward()[0].copy())
         logits = outs[0] + outs[1][:, :, ::-1]
         prob = np.exp(logits - logits.max(0))
         prob /= prob.sum(0)
