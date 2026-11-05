@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analítico de PDVs — Auditoria de Alinhamento CFTV</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=10">
+</head>
+<body>
+
+  <!-- TOAST NOTIFICATIONS FLUTUANTES -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <div class="app-layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <svg class="sidebar-logo" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="31" cy="12" r="6" fill="#3b82f6"/>
+          <circle cx="46" cy="22" r="7.5" fill="#8b5cf6"/>
+          <circle cx="22" cy="26" r="5" fill="#38bdf8"/>
+          <circle cx="28" cy="42" r="9" fill="#ea580c"/>
+        </svg>
+        <div><h1>Analítico de PDVs</h1><span>Auditoria CFTV</span></div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">Operação</div>
+        <button type="button" class="nav-item" id="btnSyncDvrLive" onclick="syncDvrLive()"><span class="nav-ico">🔄</span> Puxar do DVR ao Vivo</button>
+        <button type="button" class="nav-item" id="btnAnalyzeAll" onclick="analyzeAllCameras()"><span class="nav-ico">⚡</span> Verificar Todas</button>
+        <a class="nav-item" href="/report" target="_blank"><span class="nav-ico">📑</span> Relatório</a>
+
+        <div class="nav-section">Cadastro</div>
+        <button type="button" class="nav-item" id="btnOpenAddDvr" onclick="openAddDvrModal()"><span class="nav-ico">📼</span> Cadastrar DVR</button>
+        <button type="button" class="nav-item" id="btnOpenAddCamera" onclick="openAddCameraModal()"><span class="nav-ico">➕</span> Adicionar PDV</button>
+        <button type="button" class="nav-item" id="btnImportJanus" onclick="document.getElementById('janusFile').click()"><span class="nav-ico">📥</span> Importar do Janus</button>
+        <label class="nav-item" style="cursor:pointer;"><span class="nav-ico">📁</span> Importar CSV<input type="file" id="csvFileInput" accept=".csv" style="display:none;"></label>
+        <button type="button" class="nav-item" id="btnImportMedia" onclick="importUserMedia()"><span class="nav-ico">📂</span> Material de Teste</button>
+      </nav>
+      <input type="file" id="janusFile" accept=".jcfg,.cfg,.txt" style="display:none" onchange="importJanus(this)">
+    </aside>
+
+    <!-- CONTEÚDO -->
+    <div class="app-main">
+      <header class="topbar">
+        <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="menu">☰</button>
+        <div class="topbar-title">Painel de Auditoria</div>
+        <div class="topbar-right">
+          {% if user %}
+          <div class="user-menu" id="userMenu">
+            <button type="button" class="user-btn" onclick="event.stopPropagation(); document.getElementById('userMenu').classList.toggle('open')">
+              <span class="user-avatar">{{ user[:2]|upper }}</span>
+              <span class="user-name">{{ user }}</span>
+              <span class="user-caret">▾</span>
+            </button>
+            <div class="user-dropdown">
+              <div class="user-dropdown-header"><strong>{{ user }}</strong><span>Auditoria</span></div>
+              <a href="/logout" class="user-dropdown-item">🚪 Sair</a>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </header>
+
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main class="main-wrapper">
+    <!-- CARDS DE MÉTRICAS E RESUMO -->
+    <section class="stats-grid">
+      <div class="stat-card stat-total">
+        <div class="stat-content">
+          <h3>Total Monitorado</h3>
+          <div class="stat-value" id="statTotalVal">0</div>
+        </div>
+        <div class="stat-icon">📹</div>
+      </div>
+
+      <div class="stat-card stat-aligned">
+        <div class="stat-content">
+          <h3>Câmeras Alinhadas</h3>
+          <div class="stat-value" style="color: var(--status-aligned);" id="statAlignedVal">0</div>
+        </div>
+        <div class="stat-icon">✅</div>
+      </div>
+
+      <div class="stat-card stat-warning">
+        <div class="stat-content">
+          <h3>Atenção / Desvio Leve</h3>
+          <div class="stat-value" style="color: var(--status-warning);" id="statWarningVal">0</div>
+        </div>
+        <div class="stat-icon">⚠️</div>
+      </div>
+
+      <div class="stat-card stat-crooked">
+        <div class="stat-content">
+          <h3>Câmeras Tortas / Críticas</h3>
+          <div class="stat-value" style="color: var(--status-crooked);" id="statCrookedVal">0</div>
+        </div>
+        <div class="stat-icon">🚨</div>
+      </div>
+    </section>
+
+    <!-- BARRA DE CONTROLE, FILTROS E BUSCA -->
+    <section class="controls-bar">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="ALL">Todas</button>
+        <button class="filter-btn" data-filter="CROOKED">🚨 Tortas / Críticas</button>
+        <button class="filter-btn" data-filter="MILD_DRIFT">⚠️ Com Desvio</button>
+        <button class="filter-btn" data-filter="ALIGNED">✅ Alinhadas</button>
+        <button class="filter-btn" data-filter="OFFLINE">⚫ Sem Sinal</button>
+      </div>
+
+      <!-- Filtro por Cliente / Loja (vindo do MongoDB easicash.lojas_v2) -->
+      <div class="dvr-selector-group">
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">🏢 Cliente:</span>
+        <select id="clienteFilterSelect" class="filter-select">
+          <option value="ALL">Todos os clientes</option>
+        </select>
+      </div>
+      <div class="dvr-selector-group">
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">🏬 Loja:</span>
+        <select id="lojaFilterSelect" class="filter-select">
+          <option value="ALL">Todas as lojas</option>
+        </select>
+        <button type="button" id="btnPuxarLoja" class="btn btn-primary btn-sm" onclick="puxarLoja()" title="Importa os DVRs desta loja do Mongo (via túnel SSH) e puxa as câmeras" style="padding: 0.3rem 0.65rem; font-size: 0.75rem; display:none;">
+          📥 Puxar loja
+        </button>
+      </div>
+
+      <!-- Filtro seletor por DVR -->
+      <div class="dvr-selector-group">
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">📼 DVR:</span>
+        <select id="dvrFilterSelect" class="filter-select">
+          <option value="ALL">Todos os DVRs</option>
+        </select>
+        <button type="button" id="btnRedetect" class="btn btn-secondary btn-sm" onclick="redetectChannels()" title="Relê os canais ativos do DVR selecionado (nomes reais) e remove canais vazios" style="padding: 0.3rem 0.65rem; font-size: 0.75rem;">
+          🔎 Re-detectar
+        </button>
+      </div>
+
+      <!-- Auto-Auditoria Contínua -->
+      <div class="dvr-selector-group" style="gap: 0.4rem;">
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">⏱️ Auto-Auditoria:</span>
+        <button type="button" id="btnAutoScanToggle" class="btn btn-secondary btn-sm" onclick="toggleAutoScan()" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">
+          OFF
+        </button>
+        <select id="autoScanIntervalSelect" class="filter-select" onchange="changeAutoScanInterval(this.value)">
+          <option value="30">30s</option>
+          <option value="60" selected>1 min</option>
+          <option value="300">5 min</option>
+        </select>
+      </div>
+
+      <div class="search-box">
+        <span style="margin-right: 0.5rem; opacity: 0.6;">🔍</span>
+        <input type="text" id="cameraSearchInput" placeholder="Buscar por PDV, DVR, Canal ou IP...">
+      </div>
+    </section>
+
+    <!-- GRID DE CÂMERAS -->
+    <section class="cameras-grid" id="camerasGrid">
+      <!-- Inserido dinamicamente pelo app.js -->
+    </section>
+  </main>
+    </div><!-- /app-main -->
+  </div><!-- /app-layout -->
+
+  <!-- MODAL DE DIAGNÓSTICO DETALHADO -->
+  <div class="modal-overlay" id="diagnosticModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h2 id="diagModalTitle">Diagnóstico de Posição</h2>
+          <span style="font-size: 0.8rem; color: var(--text-dim);" id="diagModalMeta"></span>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('diagnosticModal')">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Comparação Visual Lado a Lado -->
+        <div class="compare-container">
+          <div class="compare-view">
+            <span class="compare-title">📌 Imagem Calibrada (Referência Padrão)</span>
+            <img id="diagRefImg" class="compare-frame" src="" alt="Referência">
+          </div>
+          <div class="compare-view">
+            <span class="compare-title">📡 Frame Atual com Análise e Inclinômetro</span>
+            <img id="diagCurrImg" class="compare-frame" src="" alt="Frame Atual">
+          </div>
+        </div>
+
+        <!-- Parecer do Diagnóstico de Alinhamento -->
+        <div id="diagStatusBanner" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; background: rgba(16, 185, 129, 0.12); border: 1px solid var(--status-aligned); border-radius: var(--radius-sm); padding: 0.85rem 1.25rem;">
+          <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+            <span id="diagStatusBadge" class="status-badge status-aligned" style="font-size: 0.95rem; padding: 0.35rem 0.85rem; font-weight: 700;">🟢 ALINHADA (OK)</span>
+            <span id="diagReasonText" style="font-size: 0.88rem; color: #e2e8f0;">O alinhamento do caixa está dentro dos parâmetros operacionais de conformidade.</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-accent btn-sm" id="btnDiagLive" onclick="toggleLiveView()">▶ Ver ao Vivo</button>
+            <a class="btn btn-secondary btn-sm" id="diagTechLink" href="#" target="_blank" title="Página de celular para o técnico ajustar a câmera ao vivo — copie e envie o link">📱 Link do Técnico</a>
+            <button type="button" class="btn btn-primary btn-sm" id="btnDiagPullDvr" onclick="diagPullDvrNow()">🔄 Puxar do DVR ao Vivo</button>
+          </div>
+        </div>
+
+        <!-- Telemetria Matemática -->
+        <div class="telemetry-row" style="grid-template-columns: repeat(4, 1fr); padding: 1rem;">
+          <div class="telemetry-item">
+            <span class="telemetry-label">Ângulo de Torção</span>
+            <span class="telemetry-val" id="diagAngleVal" style="font-size: 1.25rem;">0.0°</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Deslocamento Físico</span>
+            <span class="telemetry-val" id="diagShiftVal" style="font-size: 1.25rem;">0.0 px</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Confiança do Algoritmo</span>
+            <span class="telemetry-val" id="diagConfVal" style="font-size: 1.25rem;">0%</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Método Analítico</span>
+            <span class="telemetry-val" id="diagMethodVal" style="font-size: 0.85rem; margin-top: 0.4rem;">-</span>
+          </div>
+        </div>
+
+        <!-- Cenários de Teste e Upload de Fotos -->
+        <div style="background: var(--bg-surface); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.85rem;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan);">🧪 Testar com Cenários Reais de Exemplo:</span>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="applyTestScenario('alinhada')">🟢 0° Normal</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="applyTestScenario('desvio_leve')">🟡 +3.2° Desvio</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="applyTestScenario('torta')">🔴 -7.8° Torta</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="applyTestScenario('critica')">🚨 +12.5° Crítica</button>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">📤 Testar com Arquivo do Computador:</span>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <label class="btn btn-secondary btn-sm" style="cursor: pointer;">
+                📷 Enviar Foto
+                <input type="file" id="uploadTestImageInput" accept="image/*" style="display: none;" onchange="uploadCustomImage(false)">
+              </label>
+              <label class="btn btn-secondary btn-sm" style="cursor: pointer;">
+                🎥 Enviar Vídeo (.avi / .mp4)
+                <input type="file" id="uploadVideoInput" accept="video/*" style="display: none;" onchange="uploadCustomVideo()">
+              </label>
+              <label class="btn btn-secondary btn-sm" style="cursor: pointer;">
+                📌 Nova Referência
+                <input type="file" id="uploadRefImageInput" accept="image/*" style="display: none;" onchange="uploadCustomImage(true)">
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('diagnosticModal')">Fechar</button>
+        <button type="button" class="btn btn-accent" id="diagCalibrateBtn">🎯 Definir Frame Atual como Nova Referência</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE CADASTRO DE CÂMERA / PDV INDIVIDUAL -->
+  <div class="modal-overlay" id="addCameraModal">
+    <div class="modal-box" style="max-width: 680px;">
+      <div class="modal-header">
+        <h2>➕ Cadastrar Câmera de PDV</h2>
+        <button type="button" class="close-btn" onclick="closeModal('addCameraModal')">&times;</button>
+      </div>
+
+      <form id="addCameraForm" onsubmit="handleSaveCamera(event)">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="camName">Identificação do Caixa / PDV *</label>
+              <input type="text" id="camName" required placeholder="Ex: PDV 01 — Frente de Loja">
+            </div>
+
+            <!-- Associação de DVR -->
+            <div class="form-group" style="grid-column: 1 / -1; background: var(--bg-surface); padding: 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              <label for="camDvrSelect" style="color: var(--accent-cyan); font-weight: 700;">📼 Vincular a um DVR Cadastrado (Opcional):</label>
+              <select id="camDvrSelect" onchange="handleDvrSelectChange(this.value)">
+                <option value="">Nenhum (Câmera IP / RTSP Avulso)</option>
+              </select>
+              <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.35rem;">Ao selecionar um DVR, o IP, porta, credenciais e fabricante serão preenchidos automaticamente.</p>
+            </div>
+
+            <div class="form-group">
+              <label for="camBrand">Fabricante / Protocolo</label>
+              <select id="camBrand">
+                <option value="intelbras">Intelbras</option>
+                <option value="hikvision">Hikvision</option>
+                <option value="dahua">Dahua</option>
+                <option value="axis">Axis Communications</option>
+                <option value="hanwha">Hanwha / Samsung</option>
+                <option value="uniview">Uniview</option>
+                <option value="generic">RTSP Genérico</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="camIp">Endereço IP</label>
+              <input type="text" id="camIp" placeholder="10.59.151.131 ou 192.168.1.50">
+            </div>
+
+            <div class="form-group">
+              <label for="camPort">Porta RTSP</label>
+              <input type="number" id="camPort" value="554">
+            </div>
+
+            <div class="form-group">
+              <label for="camChannel">Canal no DVR</label>
+              <input type="number" id="camChannel" value="1" min="1" max="64">
+            </div>
+
+            <div class="form-group">
+              <label for="camUser">Usuário</label>
+              <input type="text" id="camUser" value="admin">
+            </div>
+
+            <div class="form-group">
+              <label for="camPass">Senha</label>
+              <input type="password" id="camPass" placeholder="••••••••">
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              <div>
+                <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">🔌 Teste de Conexão:</span>
+                <span id="camTestResult" style="font-size: 0.8rem; margin-left: 0.5rem; color: var(--text-dim);">Pronto para testar</span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="testCameraConnection()">
+                ⚡ Testar Conexão Agora
+              </button>
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1; display: flex; align-items: center; gap: 0.65rem;">
+              <input type="checkbox" id="camSubstream" checked style="width: auto;">
+              <label for="camSubstream" style="margin: 0; cursor: pointer;">Utilizar Substream secundário (recomendado para tráfego via VPN e menor latência)</label>
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1; background: var(--bg-surface); padding: 0.85rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-color);">
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <input type="checkbox" id="camSimulation" style="width: auto;">
+                <label for="camSimulation" style="margin: 0; font-weight: 700; color: var(--accent-cyan);">Modo Demonstração / Simulação</label>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">Permite simular inclinações matemáticas para testes sem câmera física conectada.</p>
+              
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <label for="camSimAngle" style="font-size: 0.75rem;">Simular Inclinação (°):</label>
+                <input type="number" id="camSimAngle" step="0.5" value="0.0" style="width: 90px; padding: 0.35rem;">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('addCameraModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitCamera">💾 Salvar Câmera</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL DE CADASTRO DE DVR COMPLETO -->
+  <div class="modal-overlay" id="addDvrModal">
+    <div class="modal-box" style="max-width: 650px;">
+      <div class="modal-header">
+        <div>
+          <h2>📼 Cadastrar Equipamento DVR / NVR</h2>
+          <span style="font-size: 0.8rem; color: var(--text-dim);">Cadastre o DVR da loja para monitorar múltiplos caixas simultaneamente</span>
+        </div>
+        <button type="button" class="close-btn" onclick="closeModal('addDvrModal')">&times;</button>
+      </div>
+
+      <form id="addDvrForm" onsubmit="handleSaveDvr(event)">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="dvrName">Nome de Identificação do DVR *</label>
+              <input type="text" id="dvrName" required placeholder="Ex: DVR Loja 01 — Intelbras MHDX Frente de Caixa">
+            </div>
+
+            <div class="form-group">
+              <label for="dvrBrand">Fabricante do DVR</label>
+              <select id="dvrBrand">
+                <option value="intelbras">Intelbras (MHDX / Multi-HD)</option>
+                <option value="hikvision">Hikvision</option>
+                <option value="dahua">Dahua</option>
+                <option value="axis">Axis Communications</option>
+                <option value="uniview">Uniview</option>
+                <option value="generic">RTSP Genérico</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="dvrIp">Endereço IP do DVR *</label>
+              <input type="text" id="dvrIp" required placeholder="Ex: 10.59.151.131 ou 192.168.1.100">
+            </div>
+
+            <div class="form-group">
+              <label for="dvrPort">Porta RTSP</label>
+              <input type="number" id="dvrPort" value="554">
+            </div>
+
+            <div class="form-group">
+              <label for="dvrHttpPort">Porta Web HTTP</label>
+              <input type="number" id="dvrHttpPort" value="80">
+            </div>
+
+            <div class="form-group">
+              <label for="dvrUser">Usuário do DVR</label>
+              <input type="text" id="dvrUser" value="admin">
+            </div>
+
+            <div class="form-group">
+              <label for="dvrPass">Senha do DVR</label>
+              <input type="password" id="dvrPass" placeholder="••••••••">
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="dvrChannels">Quantidade de Canais do DVR</label>
+              <select id="dvrChannels">
+                <option value="4">4 Canais</option>
+                <option value="8">8 Canais</option>
+                <option value="16" selected>16 Canais (Padrão Loja)</option>
+                <option value="18">18 Canais</option>
+                <option value="32">32 Canais</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1; background: var(--bg-surface); padding: 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">🔌 Teste de Conexão com o DVR:</span>
+                  <div id="dvrTestResult" style="font-size: 0.8rem; margin-top: 0.25rem; color: var(--text-dim);">Clique para testar portas RTSP (554) e HTTP (80)</div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="testDvrConnection()">
+                  ⚡ Testar DVR Agora
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group" style="grid-column: 1 / -1; background: rgba(6, 182, 212, 0.08); padding: 0.85rem; border-radius: var(--radius-sm); border: 1px dashed var(--accent-cyan);">
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <input type="checkbox" id="dvrAutoCreatePdvs" checked style="width: auto;">
+                <label for="dvrAutoCreatePdvs" style="margin: 0; font-weight: 700; color: var(--accent-cyan); cursor: pointer;">
+                  Gerar e cadastrar os PDVs para todos os canais deste DVR automaticamente
+                </label>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">
+                Cria instantaneamente os registros "PDV 01", "PDV 02", etc., vinculados aos canais deste DVR com as credenciais já configuradas.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('addDvrModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitDvr">💾 Salvar DVR e Criar PDVs</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=20261013_v22"></script>
+</body>
+</html>

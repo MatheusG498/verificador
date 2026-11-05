@@ -1,0 +1,27 @@
+# === SEGREDOS e dados de runtime (NUNCA versionar — repo é público) ===
+# data/ contém mongo_uri (conexão do Mongo), secret_key (Flask) e cameras.json/
+# dvrs.json com IPs, usuários e senhas de DVRs reais.
+data/
+data_backup_*/
+
+# === Artefatos de build do sidecar (PyInstaller) ===
+dist/
+distfix/
+build/
+buildfix/
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# === Ambiente / backups / lixo ===
+.env
+*.bak
+NUL
+snapshots/
+references/
+current_test_frames/

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório de Auditoria de Alinhamento — Câmeras de PDV</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2rem;
+      line-height: 1.5;
+    }
+    .report-paper {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 3rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .header-left h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .header-left p {
+      font-size: 0.95rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+    .header-right {
+      text-align: right;
+    }
+    .btn-print {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      font-family: inherit;
+      font-weight: 700;
+      padding: 0.65rem 1.25rem;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .btn-print:hover {
+      background: #0369a1;
+    }
+    .date-meta {
+      font-size: 0.825rem;
+      color: #64748b;
+    }
+    
+    /* KPI Cards */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    .kpi-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1.15rem;
+      text-align: center;
+    }
+    .kpi-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.04em;
+    }
+    .kpi-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      margin-top: 0.25rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    
+    /* Tabela */
+    .table-section h2 {
+      font-size: 1.2rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      color: #1e293b;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 2.5rem;
+    }
+    th {
+      background: #f1f5f9;
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #475569;
+      text-align: left;
+      border-bottom: 2px solid #cbd5e1;
+    }
+    td {
+      padding: 0.85rem 1rem;
+      font-size: 0.875rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.65rem;
+      border-radius: 12px;
+      font-size: 0.725rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-ALIGNED { background: #dcfce7; color: #15803d; }
+    .badge-MILD_DRIFT { background: #fef3c7; color: #b45309; }
+    .badge-CROOKED { background: #ffe4e6; color: #be123c; }
+    .badge-OFFLINE { background: #f1f5f9; color: #64748b; }
+
+    /* Galeria de Evidências */
+    .evidence-section h2 {
+      font-size: 1.2rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      color: #1e293b;
+    }
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+    .evidence-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f8fafc;
+    }
+    .evidence-img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .evidence-info {
+      padding: 0.85rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .evidence-name {
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .evidence-angle {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+        padding: 0;
+      }
+      .report-paper {
+        box-shadow: none;
+        padding: 0;
+        max-width: 100%;
+      }
+      .btn-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="report-paper">
+    <div class="report-header">
+      <div class="header-left">
+        <h1>Relatório de Auditoria de Câmeras de PDV</h1>
+        <p>Inspeção Técnica de Posicionamento e Alinhamento de CFTV</p>
+      </div>
+      <div class="header-right">
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+        <div class="date-meta">Gerado em: {{ generated_at }}</div>
+      </div>
+    </div>
+
+    <!-- CARDS DE CONFORMIDADE -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-title">Total de PDVs</div>
+        <div class="kpi-value">{{ total }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Alinhadas</div>
+        <div class="kpi-value" style="color: #16a34a;">{{ aligned }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Com Desvio</div>
+        <div class="kpi-value" style="color: #d97706;">{{ warning }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Tortas / Críticas</div>
+        <div class="kpi-value" style="color: #e11d48;">{{ crooked }}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Conformidade</div>
+        <div class="kpi-value" style="color: #0284c7;">{{ compliance_rate }}%</div>
+      </div>
+    </div>
+
+    <!-- TABELA GERAL -->
+    <div class="table-section">
+      <h2>Inventário de Posição de Câmeras</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>PDV / Caixa</th>
+            <th>Fabricante</th>
+            <th>Endereço IP</th>
+            <th>Status</th>
+            <th>Inclinação</th>
+            <th>Deslocamento</th>
+            <th>Última Checagem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cameras %}
+          <tr>
+            <td><strong>{{ c.name }}</strong></td>
+            <td>{{ c.brand | upper }}</td>
+            <td><code>{{ c.ip or 'Simulação' }}</code></td>
+            <td>
+              <span class="badge badge-{{ c.last_check_status }}">
+                {% if c.last_check_status == 'ALIGNED' %}Alinhada
+                {% elif c.last_check_status == 'MILD_DRIFT' %}Desvio Leve
+                {% elif c.last_check_status == 'CROOKED' %}Torta
+                {% else %}Sem Sinal{% endif %}
+              </span>
+            </td>
+            <td><strong>{{ '+' if c.last_rotation_deg > 0 else '' }}{{ c.last_rotation_deg }}°</strong></td>
+            <td>{{ c.last_translation_px }} px</td>
+            <td style="color: #64748b; font-size: 0.8rem;">{{ c.last_checked_at or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- EVIDÊNCIAS FOTOGRÁFICAS DAS CÂMERAS FORA DE POSIÇÃO -->
+    <div class="evidence-section">
+      <h2>Evidências Fotográficas — Câmeras Fora de Posição</h2>
+      <div class="evidence-grid">
+        {% for c in cameras %}
+          {% if c.last_check_status in ('CROOKED', 'MILD_DRIFT') %}
+          <div class="evidence-card">
+            <img class="evidence-img" src="/api/cameras/{{ c.id }}/snapshot" alt="{{ c.name }}">
+            <div class="evidence-info">
+              <div>
+                <div class="evidence-name">{{ c.name }}</div>
+                <div style="font-size: 0.75rem; color: #64748b;">IP: {{ c.ip or 'Simulação' }} • {{ c.brand | upper }}</div>
+              </div>
+              <div class="evidence-angle" style="color: {% if c.last_check_status == 'CROOKED' %}#e11d48{% else %}#d97706{% endif %};">
+                {{ '+' if c.last_rotation_deg > 0 else '' }}{{ c.last_rotation_deg }}°
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

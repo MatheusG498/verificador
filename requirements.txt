@@ -1,0 +1,8 @@
+flask
+requests
+numpy
+opencv-python-headless
+gunicorn
+pymongo[srv]
+bcrypt
+paramiko

@@ -1,0 +1,26 @@
+[Unit]
+Description=Verificador de Posicao de Cameras de PDV
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=verificador
+WorkingDirectory=/opt/verificador
+# Caminho do janus.plugin.streaming.jcfg: o app vigia esse arquivo e adiciona DVRs/PDVs novos sozinho.
+# Se não existir nos caminhos padrão (/opt/janus/etc/janus, /etc/janus, /usr/local/etc/janus), descomente e ajuste:
+#Environment=JANUS_JCFG=/opt/janus/etc/janus/janus.plugin.streaming.jcfg
+#Environment=JANUS_SYNC_INTERVAL=60
+# MongoDB das lojas (cliente/loja por IP do DVR). Sem isto, o filtro cliente/loja fica desligado:
+#Environment=MONGO_URI=mongodb+srv://usuario:senha@host/
+# 1 worker obrigatório: auto-auditoria e locks do JSON vivem dentro do processo.
+# Threads atendem requisições e streams ao vivo em paralelo (cada stream aberto ocupa 1).
+ExecStart=/opt/verificador/venv/bin/gunicorn -w 1 -k gthread --threads 16 --timeout 120 -b 0.0.0.0:5050 app:app
+Restart=always
+RestartSec=5
+# Leve: limita uso de RAM/CPU para não atrapalhar o servidor
+MemoryMax=1G
+CPUQuota=150%
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

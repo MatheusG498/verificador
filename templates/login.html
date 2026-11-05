@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entrar — Analítico de PDVs</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=9">
+  <style>
+    .login-wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem; }
+    .login-brand { text-align: center; margin-bottom: 1.75rem; }
+    .login-brand .dots { width: 54px; height: 54px; margin: 0 auto 0.9rem; display: block; }
+    .login-brand h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-main); }
+    .login-brand p { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .login-card {
+      width: 100%; max-width: 380px; background: var(--bg-secondary); border: 1px solid var(--border-color);
+      border-radius: var(--radius-md); padding: 1.6rem 1.5rem; box-shadow: var(--shadow-lg);
+    }
+    .login-field { margin-bottom: 1rem; }
+    .login-field label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.45rem; }
+    .login-field label .req { color: var(--brand); }
+    .login-input { position: relative; }
+    .login-input input {
+      width: 100%; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px;
+      padding: 0.7rem 0.85rem; color: var(--text-main); font-family: inherit; font-size: 0.9rem; outline: none; transition: var(--transition);
+    }
+    .login-input input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(192,80,30,0.18); }
+    .login-input .eye {
+      position: absolute; right: 0.6rem; top: 50%; transform: translateY(-50%); background: none; border: none;
+      color: var(--text-muted); cursor: pointer; padding: 0.2rem; font-size: 1rem; line-height: 1;
+    }
+    .login-remember { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0 1rem; font-size: 0.85rem; color: var(--text-muted); }
+    .login-remember input { width: 16px; height: 16px; accent-color: var(--brand); }
+    .login-btn {
+      width: 100%; padding: 0.75rem; border: none; border-radius: 8px; cursor: pointer;
+      font-family: inherit; font-size: 0.92rem; font-weight: 700; color: #fff; background: var(--brand); transition: var(--transition);
+    }
+    .login-btn:hover { background: var(--brand-hover); }
+    .login-erro { background: var(--status-crooked-bg); color: var(--status-crooked); border: 1px solid rgba(244,63,94,0.25);
+      border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.82rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-brand">
+      <svg class="dots" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="31" cy="12" r="6" fill="#3b82f6"/>
+        <circle cx="46" cy="22" r="7.5" fill="#8b5cf6"/>
+        <circle cx="22" cy="26" r="5" fill="#38bdf8"/>
+        <circle cx="28" cy="42" r="9" fill="#ea580c"/>
+      </svg>
+      <h1>Analítico de PDVs</h1>
+      <p>Acesse sua conta para continuar</p>
+    </div>
+
+    <form class="login-card" method="POST" action="/login" autocomplete="off">
+      {% if erro %}<div class="login-erro">{{ erro }}</div>{% endif %}
+      {% if not mongo_ok %}<div class="login-erro">MongoDB não configurado no servidor — login indisponível.</div>{% endif %}
+
+      <div class="login-field">
+        <label for="username">Usuário <span class="req">*</span></label>
+        <div class="login-input"><input type="text" id="username" name="username" required autofocus></div>
+      </div>
+      <div class="login-field">
+        <label for="password">Senha <span class="req">*</span></label>
+        <div class="login-input">
+          <input type="password" id="password" name="password" required>
+          <button type="button" class="eye" onclick="var p=document.getElementById('password');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'👁':'🙈';">👁</button>
+        </div>
+      </div>
+      <label class="login-remember"><input type="checkbox" name="remember"> Manter conectado</label>
+      <button type="submit" class="login-btn">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>

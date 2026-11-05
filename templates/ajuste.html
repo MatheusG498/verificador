@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ajuste — {{ name }}</title>
+  <style>
+    body { margin: 0; background: #0b0f17; color: #e2e8f0; font-family: system-ui, sans-serif; }
+    header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    h1 { font-size: 1.05rem; margin: 0; }
+    small { color: #94a3b8; }
+    img { display: block; width: 100%; background: #000; min-height: 200px; }
+    .tips { padding: 12px 16px; font-size: 0.9rem; line-height: 1.45; color: #cbd5e1; }
+    .tips b { color: #22d3ee; }
+    button { margin: 4px 16px 20px; width: calc(100% - 32px); padding: 16px; font-size: 1rem; font-weight: 700;
+             border: 0; border-radius: 10px; background: #0891b2; color: #fff; }
+    button:disabled { opacity: .6; }
+    #msg { padding: 0 16px 24px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>{{ name }}</h1><small>Canal {{ channel }} — ajuste ao vivo</small></div>
+  </header>
+  <img id="live" src="/api/cameras/{{ id }}/live" alt="Câmera ao vivo">
+  <div class="tips">
+    {% if has_ref %}
+    Mexa a câmera até as <b>linhas ciano</b> (posição de referência) ficarem em cima das bordas do balcão.
+    O topo da imagem mostra a inclinação e o deslocamento atualizados a cada segundo.
+    {% else %}
+    Esta câmera <b>não tem referência</b>. Deixe as bordas do balcão retas, paralelas às linhas da grade,
+    e salve a posição quando estiver correta.
+    {% endif %}
+    <br><small>Dica: deite o celular para ler a inclinação no topo da imagem.</small>
+  </div>
+  <button id="save">📌 Posição correta — salvar como referência</button>
+  <div id="msg"></div>
+<script>
+  const img = document.getElementById('live'), msg = document.getElementById('msg'), btn = document.getElementById('save');
+  img.onerror = () => { msg.textContent = '❌ Sem sinal da câmera. Tentando de novo...'; setTimeout(() => img.src = img.src.split('?')[0] + '?t=' + Date.now(), 3000); };
+  btn.onclick = async () => {
+    if (!confirm('Salvar a imagem ATUAL desta câmera como a posição correta?')) return;
+    btn.disabled = true; msg.textContent = '⏳ Puxando imagem atual do DVR...';
+    try {
+      // Puxa frame novo antes de calibrar: a calibração usa o último frame analisado
+      const a = await (await fetch('/api/cameras/{{ id }}/analyze', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({pull_from_dvr: true})})).json();
+      if (!a.success) throw new Error(a.message || 'Falha ao puxar imagem do DVR');
+      const c = await (await fetch('/api/cameras/{{ id }}/calibrate', {method: 'POST'})).json();
+      if (!c.success) throw new Error(c.message);
+      if (c.message.includes('ATENÇÃO')) { msg.textContent = '⚠️ ' + c.message; btn.disabled = false; return; }
+      msg.textContent = '✅ Referência salva! Recarregando a guia...';
+      setTimeout(() => location.reload(), 1200);
+    } catch (e) { msg.textContent = '❌ ' + e.message; btn.disabled = false; }
+  };
+</script>
+</body>
+</html>

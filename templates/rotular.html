@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marcação — IA de Balcão e Corredor</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0b0f17; color: #e2e8f0; font-family: system-ui, sans-serif; display: flex; height: 100vh; }
+    aside { width: 250px; overflow-y: auto; border-right: 1px solid #1e293b; padding: 10px; flex-shrink: 0; }
+    aside h2 { font-size: .95rem; margin: 4px 0 8px; }
+    .cam { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: .82rem; display: flex; justify-content: space-between; }
+    .cam:hover { background: #1e293b; } .cam.active { background: #0e7490; }
+    main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 10px; border-bottom: 1px solid #1e293b; }
+    button { padding: 7px 12px; border: 0; border-radius: 6px; background: #334155; color: #fff; font-weight: 600; cursor: pointer; }
+    button.on { outline: 3px solid #fff; } .pdv { background: #b91c1c; } .cor { background: #15803d; } .save { background: #0891b2; }
+    .wrap { flex: 1; overflow: auto; padding: 10px; } canvas { max-width: 100%; cursor: crosshair; display: block; }
+    .help { font-size: .82rem; color: #94a3b8; padding: 6px 10px; line-height: 1.5; }
+    .help b { color: #e2e8f0; } #status { margin-left: auto; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <aside><h2 id="progress">Câmeras</h2><div id="list"></div></aside>
+  <main>
+    <div class="bar">
+      <button class="pdv on" id="mPdv">🟥 Balcão / PDV (1)</button>
+      <button class="cor" id="mCor">🟩 Corredor (2)</button>
+      <button id="close">Fechar polígono (Enter)</button>
+      <button id="undo">Desfazer (Backspace)</button>
+      <button id="clear">Limpar tudo</button>
+      <label style="font-size:.85rem"><input type="checkbox" id="noAisle"> Corredor não aparece</label>
+      <button id="prev">◀ imagem</button><button id="next">imagem ▶</button>
+      <button class="save" id="save">💾 Salvar e próxima (S)</button>
+      <span id="status"></span>
+    </div>
+    <div class="help">
+      🟡 = rascunho feito pela IA: se estiver certo, só aperte <b>S</b>; se não, <b>Limpar tudo</b> e redesenhe. ✅ = revisada.
+      Marque <b>uma imagem por câmera</b> (vale para todas as capturas dela). Clique para pôr os pontos e <b>Enter</b> para fechar.
+      <b>Balcão/PDV</b>: todo o móvel do caixa — esteira, área de embalar, balcão do operador.
+      <b>Corredor</b>: piso à frente do caixa por onde passam clientes e carrinhos (até a grade, gôndola ou borda da imagem).
+      Pode desenhar mais de um polígono de cada. Se o corredor não aparece, marque só o balcão e a caixa "Corredor não aparece".
+    </div>
+    <div class="wrap"><canvas id="cv"></canvas></div>
+  </main>
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d'), img = new Image();
+let cams = [], cam = null, imgIdx = 0, mode = 'pdv', polys = { pdv: [], corredor: [] }, cur = [];
+const COLORS = { pdv: '220,38,38', corredor: '22,163,74' };
+const $ = id => document.getElementById(id);
+
+async function loadList(selectKey) {
+  cams = (await (await fetch('/api/rotular/cameras')).json()).cameras;
+  $('progress').textContent = `${cams.filter(c => c.labeled).length}/${cams.length} revisadas · ${cams.filter(c => c.draft).length} rascunhos`;
+  $('list').innerHTML = cams.map((c, i) => `<div class="cam ${cam && c.key === cam.key ? 'active' : ''}" data-i="${i}" title="${c.draft ? 'Rascunho da IA — confira e salve' : ''}"><span>${c.key}</span><span>${c.labeled ? '✅' : c.draft ? '🟡' : ''}</span></div>`).join('');
+  document.querySelectorAll('.cam').forEach(el => el.onclick = () => open(cams[+el.dataset.i]));
+  if (selectKey !== undefined) open(cams.find(c => c.key === selectKey) || cams.find(c => !c.labeled) || cams[0]);
+}
+
+async function open(c) {
+  if (!c) return;
+  cam = c; cur = [];
+  const lab = await (await fetch(`/api/rotular/label/${c.key}`)).json();
+  polys = { pdv: lab.pdv || [], corredor: lab.corredor || [] };
+  $('noAisle').checked = !!lab.sem_corredor;
+  imgIdx = Math.max(0, lab.image ? c.images.indexOf(lab.image) : Math.floor(c.images.length / 2));
+  showImage();
+  document.querySelectorAll('.cam').forEach(el => el.classList.toggle('active', cams[+el.dataset.i].key === c.key));
+}
+
+function showImage() {
+  img.onload = () => { cv.width = img.naturalWidth; cv.height = img.naturalHeight; draw(); };
+  img.src = `/api/rotular/imagem/${cam.key}/${cam.images[imgIdx]}`;
+  $('status').textContent = `${cam.key} — imagem ${imgIdx + 1}/${cam.images.length}`;
+}
+
+function draw() {
+  ctx.drawImage(img, 0, 0);
+  const W = cv.width, H = cv.height, lw = Math.max(2, W / 400);
+  for (const k of ['pdv', 'corredor']) for (const p of polys[k]) {
+    ctx.beginPath(); p.forEach(([x, y], i) => i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)); ctx.closePath();
+    ctx.fillStyle = `rgba(${COLORS[k]},0.35)`; ctx.fill(); ctx.strokeStyle = `rgb(${COLORS[k]})`; ctx.lineWidth = lw; ctx.stroke();
+  }
+  if (cur.length) {
+    ctx.beginPath(); cur.forEach(([x, y], i) => i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H));
+    ctx.strokeStyle = `rgb(${COLORS[mode]})`; ctx.lineWidth = lw; ctx.stroke();
+    cur.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x * W, y * H, lw * 2, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); });
+  }
+}
+
+cv.onclick = e => {
+  const r = cv.getBoundingClientRect();
+  cur.push([+((e.clientX - r.left) / r.width).toFixed(4), +((e.clientY - r.top) / r.height).toFixed(4)]);
+  draw();
+};
+function closePoly() { if (cur.length >= 3) polys[mode].push(cur); cur = []; draw(); }
+function setMode(m) { closePoly(); mode = m; $('mPdv').classList.toggle('on', m === 'pdv'); $('mCor').classList.toggle('on', m === 'corredor'); }
+function undo() { if (cur.length) cur.pop(); else if (polys[mode].length) polys[mode].pop(); draw(); }
+
+async function save() {
+  closePoly();
+  if (!polys.pdv.length) { alert('Marque pelo menos o balcão/PDV.'); return; }
+  if (!polys.corredor.length && !$('noAisle').checked) { alert('Marque o corredor ou a caixa "Corredor não aparece".'); return; }
+  await fetch(`/api/rotular/label/${cam.key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: cam.images[imgIdx], pdv: polys.pdv, corredor: polys.corredor, sem_corredor: $('noAisle').checked }) });
+  const next = cams.slice(cams.indexOf(cam) + 1).find(c => !c.labeled) || cams.find(c => !c.labeled && c.key !== cam.key);
+  await loadList(next ? next.key : cam.key);
+}
+
+$('mPdv').onclick = () => setMode('pdv'); $('mCor').onclick = () => setMode('corredor');
+$('close').onclick = closePoly; $('undo').onclick = undo; $('save').onclick = save;
+$('clear').onclick = () => { if (confirm('Apagar as marcações desta câmera?')) { polys = { pdv: [], corredor: [] }; cur = []; draw(); } };
+$('prev').onclick = () => { imgIdx = (imgIdx - 1 + cam.images.length) % cam.images.length; showImage(); };
+$('next').onclick = () => { imgIdx = (imgIdx + 1) % cam.images.length; showImage(); };
+document.onkeydown = e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'Enter') closePoly(); else if (e.key === 'Backspace') { e.preventDefault(); undo(); }
+  else if (e.key === '1') setMode('pdv'); else if (e.key === '2') setMode('corredor');
+  else if (e.key.toLowerCase() === 's') save();
+};
+loadList(null).then(() => open(cams.find(c => !c.labeled) || cams[0]));  // lista já vem na ordem de revisão
+</script>
+</body>
+</html>
